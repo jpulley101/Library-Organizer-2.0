@@ -1,7 +1,6 @@
 angular.module('libraryOrganizer')
 .controller('editorController', function($scope, $http, $mdDialog, $mdToast, book, $vm, viewType, username) {
 	$scope.book = angular.copy(book);
-	console.log(book)
 	if (!$scope.book.tags) {
 		$scope.book.tags = [];
 	}
@@ -75,8 +74,8 @@ angular.module('libraryOrganizer')
 		$vm.getSettingByName('PM Readers', function(value) {
 			$scope.book.pmreaders.Int64 = value;
 		});
-		$vm.getSettingByName('Binding', function(value) {
-			$scope.book.binding = value;
+		$vm.getSettingByName('Format', function(value) {
+			$scope.book.format = value;
 		});
 		$vm.getSettingByName('Pages', function(value) {
 			$scope.book.pages = value;
@@ -154,223 +153,53 @@ angular.module('libraryOrganizer')
 	if (!$scope.book.pmreaders.Valid) {
 		$scope.book.pmreaders.Int64 = "";
 	}
-	$scope.publishers = [];
-	$scope.cities = [];
-	$scope.states = [];
-	$scope.countries = [];
-	$scope.series = [];
-	$scope.bindings = [];
-	$scope.languages = [];
-	$scope.roles = [];
-	$scope.deweys = [];
-	$scope.genres = {};
-	$scope.tags = [];
-	$scope.awards = [];
 	$scope.libraries = [];
 	$scope.updateLibraries = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-        $http({
-        	url: '/libraries'
-        }).then(function(response) {
-            for (l in response.data) {
-	            if ((response.data[l].permissions&4)==4) {
-	            	$scope.libraries.push(response.data[l])
+        return $http({
+	        	url: '/libraries'
+	        }).then(function(response) {
+	            for (l in response.data) {
+		            if ((response.data[l].permissions&4)==4) {
+		            	$scope.libraries.push(response.data[l])
+		            }
+		        }
+	            for (l in $scope.libraries) {
+	            	if ($scope.libraries[l].owner != username) {
+	            		$scope.libraries[l].display = $scope.libraries[l].name + " (" + $scope.libraries[l].owner + ")"
+	            	} else {
+	            		if (!$scope.book.library.id) {
+	            			$scope.book.library.id = $scope.libraries[l].id;
+	            			$scope.book.library.name = $scope.libraries[l].name;
+	            			$scope.book.library.permissions = $scope.libraries[l].permissions;
+	            			$scope.book.library.owner = $scope.libraries[l].owner;
+	            		}
+		            	$scope.libraries[l].display = $scope.libraries[l].name
+	            	}
 	            }
-	        }
-            for (l in $scope.libraries) {
-            	if ($scope.libraries[l].owner != username) {
-            		$scope.libraries[l].display = $scope.libraries[l].name + " (" + $scope.libraries[l].owner + ")"
-            	} else {
-            		if (!$scope.book.library.id) {
-            			$scope.book.library.id = $scope.libraries[l].id;
-            			$scope.book.library.name = $scope.libraries[l].name;
-            			$scope.book.library.permissions = $scope.libraries[l].permissions;
-            			$scope.book.library.owner = $scope.libraries[l].owner;
-            		}
-	            	$scope.libraries[l].display = $scope.libraries[l].name
-            	}
-            }
-            $vm.removeFromLoading(loadingName);
-        }).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of libraries");
-        	$vm.removeFromLoading(loadingName);
-        });
+	        }, function(response) {
+	        	$mdToast.showSimple("Failed to retrieve list of libraries");
+	        	$scope.libraries = [];
+	        });
     };
-	$scope.updatePublishers = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/publishers',
-			method: 'GET',
-		}).then(function(response){
-			$scope.publishers = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of publishers");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updatePublishers();
-	$scope.updateCities = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/cities',
-			method: 'GET'
-		}).then(function(response){
-			$scope.cities = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of cities");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateCities();
-	$scope.updateStates = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/states',
-			method: 'GET'
-		}).then(function(response){
-			$scope.states = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of states");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateStates();
-	$scope.updateCountries = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/countries',
-			method: 'GET'
-		}).then(function(response){
-			$scope.countries = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of countries");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateCountries();
-	$scope.updateSeries = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/series',
-			method: 'GET'
-		}).then(function(response){
-			$scope.series = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of series");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateSeries();
-	$scope.updateBindings = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/formats',
-			method: 'GET'
-		}).then(function(response){
-			$scope.bindings = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of bindings");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateBindings();
-	$scope.updateLanguages = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/languages',
-			method: 'GET'
-		}).then(function(response){
-			$scope.languages = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of languages");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateLanguages();
-	$scope.updateRoles = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/roles',
-			method: 'GET'
-		}).then(function(response){
-			$scope.roles = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of roles");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateRoles();
-	$scope.updateDeweys = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/deweys',
-			method: 'GET'
-		}).then(function(response){
-			for (i in response.data) {
-				$scope.deweys.push(response.data[i].dewey);
-				$scope.genres[response.data[i].dewey] = response.data[i].genre;
-			}
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of deweys");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateDeweys();
-	$scope.updateTags = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/tags',
-			method: 'GET'
-		}).then(function(response){
-			if (!response.data) {
-				response.data = [];
-			}
-			$scope.tags = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of tags");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateTags();
-	$scope.updateAwards = function() {
-        var loadingName = $vm.guid();
-        $vm.addToLoading(loadingName)
-		$http({
-			url: '/information/awards',
-			method: 'GET'
-		}).then(function(response){
-			if (!response.data) {
-				response.data = [];
-			}
-			$scope.awards = response.data;
-            $vm.removeFromLoading(loadingName);
-		}).then(function(response) {
-        	$mdToast.showSimple("Failed to retrieve list of awards");
-        	$vm.removeFromLoading(loadingName);
-        });
-	}
-    $scope.updateAwards();
+    $scope.updateLibraries();
+	$scope.updateDewey = function(d) {
+        return $http({
+				url: '/information/deweys/'+d,
+				method: 'GET',
+				params: {
+					str: ''
+				}
+			}).then(function(response){
+				return response.data;
+			}, function(response) {
+	        	$mdToast.showSimple("Failed to retrieve list of deweys");
+	        	return [];
+	        });
+	};
+	$scope.genre = "";
+	$scope.$watch('book.dewey', function() {
+        $scope.genre = $scope.updateDewey($scope.book.dewey);
+    });
 	$scope.newContributor = {
 		role: 'Role',
 		name: {
@@ -426,11 +255,11 @@ angular.module('libraryOrganizer')
 		if (book.dewey.String == "0" || book.dewey.String == "00") {
 			book.dewey.String = "000";
 		}
-		book.dewey.Valid = book.dewey.String || book.dewey.String == "000"
+		book.dewey.Valid = book.dewey.String != "" || book.dewey.String == "000"
 		book.primarylanguage = book.primarylanguage?book.primarylanguage:$scope.primaryLanguageSearchText;
 		book.secondarylanguage = book.secondarylanguage?book.secondarylanguage:$scope.secondaryLanguageSearchText;
 		book.originallanguage = book.originallanguage?book.originallanguage:$scope.originalLanguageSearchText;
-		var method = book.id ? 'PUT':'POST';
+		var method = book.bookid ? 'PUT':'POST';
 		console.log(book)
 		$http({
 			url: '/books',
@@ -514,23 +343,23 @@ angular.module('libraryOrganizer')
 		$scope.pastingurl = false;
 		$scope.book.imageurl = $scope.oldUrl;
 	}
-	$scope.query = function(arr, str) {
-		arr.push(str);
-		var results = str ? arr.filter(function(s) {
-			return (angular.lowercase(s).indexOf(angular.lowercase(str)) !== -1);
-		}) : arr;
-		return results;
+	$scope.query = function(f, str) {
+		return $http({
+				url: '/information/'+f.toLowerCase(),
+				method: 'GET',
+				params: {
+					str: str
+				}
+			}).then(function(response){
+				return response.data;
+			}, function(response) {
+	        	$mdToast.showSimple("Failed to retrieve list of " + f);
+	        	return [];
+	        });
 	}
 	$scope.log = function(item) {
 		console.log(item)
 	}
-	$scope.getGenre = function() {
-		if ($scope.book.dewey.String == "FIC") {
-			return 'Fiction';
-		}
-		return $scope.genres[$scope.book.dewey.String]?$scope.genres[$scope.book.dewey.String].replace(">", "\u003e"):'';
-	}
-    $scope.updateLibraries();
     $scope.convertIsbn = function() {
     	if ($scope.book.isbn.length == 10 && $scope.isValidIsbn($scope.book.isbn)) {
     		$scope.book.isbn = $scope.isbn10to13($scope.book.isbn);

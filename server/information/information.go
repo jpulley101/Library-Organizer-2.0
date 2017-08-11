@@ -26,26 +26,16 @@ const (
 	getContributorsQuery = "SELECT PersonID, Role, FirstName, MiddleNames, LastName from written_by join persons on written_by.AuthorID = persons.PersonID WHERE BookID=?"
 	getTagsQuery         = "SELECT DISTINCT(Tag) from tags"
 	getAwardsQuery         = "SELECT DISTINCT(Award) from awards"
+	genreQuery = "SELECT genre FROM dewey_numbers WHERE number=?"
 
 	SORTMETHOD = "Dewey:ASC--Series:ASC--Volume:ASC--Author:ASC--Title:ASC--Subtitle:ASC--Edition:ASC--Lexile:ASC--InterestLevel:ASC--AR:ASC--LearningAZ:ASC--GuidedReading:ASC--DRA:ASC--FountasPinnell:ASC--ReadingRecovery:ASC--PMReaders:ASC--Grade:ASC--Age:ASC||Dewey:ASC--Series:ASC--Volume:ASC--Author:ASC--Title:ASC--Subtitle:ASC--Edition:ASC--Lexile:ASC--InterestLevel:ASC--AR:ASC--LearningAZ:ASC--GuidedReading:ASC--DRA:ASC--FountasPinnell:ASC--ReadingRecovery:ASC--PMReaders:ASC--Grade:ASC--Age:ASC"
 )
 
 var logger = log.New(os.Stderr, "log: ", log.LstdFlags|log.Lshortfile)
 
-//StatChart is data for a chart
-type StatChart struct {
-	Chart StatChartInfo `json:"chart"`
-	Data  []StatData    `json:"data"`
-}
-
-//StatChartInfo is chart metadata
-type StatChartInfo struct {
-	Caption           string `json:"caption"`
-	Subcaption           string `json:"subcaption"`
-	FormatNumberScale string `json:"formatNumberScale"`
-	NumberSuffix      string `json:"numberSuffix"`
-	Decimals          string `json:"decimals"`
-	LabelDisplay      string `json:"labelDisplay"`
+type ChartInfo struct {
+	Total int `json:"total"`
+	Data []StatData `json:"data"`
 }
 
 //StatData is chart data
@@ -86,18 +76,16 @@ type Dewey struct {
 }
 
 //GetStats gets statistics by type
-func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
-	var chart StatChart
-	chart.Chart.LabelDisplay = "rotate"
+func GetStats(db *sql.DB, t, libraryids string) (ChartInfo, error) {
 	var data []StatData
+	totalCount := 0
 	if libraryids == "" {
-		return chart, nil
+		return ChartInfo{}, nil
 	}
 	var query string
 	inlibrary := "AND libraryid IN (" + libraryids + ")"
 	switch t {
 	case "generalbycounts":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		var read int64
 		var reading int64
@@ -116,9 +104,9 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 		err := db.QueryRow(query).Scan(&total, &read, &reading, &toread, &reference, &loaned, &shipping)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Count (Total: " + strconv.FormatInt(total, 10) + ")"
+		totalCount = int(total)
 		data = append(data, StatData{
 			Label:    "Read",
 			Value:    strconv.FormatInt(read, 10),
@@ -150,8 +138,6 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			ToolText: fmt.Sprintf("%.2f%%", float64(loaned)/float64(total)*100),
 		})
 	case "generalbysize":
-		chart.Chart.NumberSuffix = " mm³"
-		chart.Chart.Decimals = "0"
 		var total sql.NullInt64
 		var read sql.NullInt64
 		var reading sql.NullInt64
@@ -170,9 +156,8 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 		err := db.QueryRow(query).Scan(&total, &read, &reading, &toread, &reference, &loaned, &shipping)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Size"
 		data = append(data, StatData{
 			Label:    "Read",
 			Value:    fmt.Sprintf("%.2f", float64(read.Int64)),
@@ -204,8 +189,6 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			ToolText: fmt.Sprintf("%.2f%%", float64(loaned.Int64)/float64(total.Int64)*100),
 		})
 	case "generalbypages":
-		chart.Chart.NumberSuffix = " pages"
-		chart.Chart.Decimals = "0"
 		var total sql.NullInt64
 		var read sql.NullInt64
 		var reading sql.NullInt64
@@ -224,9 +207,8 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 		err := db.QueryRow(query).Scan(&total, &read, &reading, &toread, &reference, &loaned, &shipping)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Pages"
 		data = append(data, StatData{
 			Label:    "Read",
 			Value:    fmt.Sprintf("%.2f", float64(read.Int64)),
@@ -258,20 +240,18 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			ToolText: fmt.Sprintf("%.2f%%", float64(loaned.Int64)/float64(total.Int64)*100),
 		})
 	case "publishersbooksperparent":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Parent Company"
 		query := `SELECT COUNT(parentcompany) AS number, ParentCompany FROM publishers JOIN books ON publishers.PublisherID = books.PublisherID WHERE isowned = 1 and parentcompany != "" ` + inlibrary + ` GROUP BY parentcompany ORDER BY number DESC`
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for rows.Next() {
 			var count int64
@@ -279,7 +259,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err = rows.Scan(&count, &company)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			data = append(data, StatData{
 				Label:    company,
@@ -288,20 +268,18 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			})
 		}
 	case "publisherstopchildren":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Top Publishers"
 		query := `SELECT COUNT(publisher) AS number, Publisher FROM publishers JOIN books ON publishers.PublisherID = books.PublisherID WHERE isowned = 1 and publisher != "" ` + inlibrary + ` GROUP BY publisher ORDER BY number DESC LIMIT 30`
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for rows.Next() {
 			var count int64
@@ -309,7 +287,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err = rows.Scan(&count, &company)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			data = append(data, StatData{
 				Label:    company,
@@ -318,20 +296,18 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			})
 		}
 	case "publisherstoplocations":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Top Locations"
 		query := `SELECT COUNT(*) AS number, city, state, country FROM publishers JOIN books ON publishers.PublisherID = books.PublisherID WHERE isowned = 1 and (city != "" or state != "" or country != "") ` + inlibrary + ` GROUP BY city, state, country ORDER BY number DESC LIMIT 30`
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for rows.Next() {
 			var count int64
@@ -339,7 +315,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err = rows.Scan(&count, &city, &state, &country)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			label := city + ", "
 			if state != "" {
@@ -354,19 +330,17 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			})
 		}
 	case "series":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Series"
-		series, err := GetSeries(db)
+		series, err := GetSeries(db, "")
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for _, s := range series {
 			var count int64
@@ -374,7 +348,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := db.QueryRow(seriesquery, s).Scan(&count)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			if count > 0 && s != "" {
 				data = append(data, StatData{
@@ -385,19 +359,17 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			}
 		}
 	case "languagesprimary":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Primary Language"
-		languages, err := GetLanguages(db)
+		languages, err := GetLanguages(db, "")
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for _, language := range languages {
 			var count int64
@@ -405,7 +377,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := db.QueryRow(languagequery, language).Scan(&count)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			if count > 0 && language != "" {
 				data = append(data, StatData{
@@ -416,19 +388,17 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			}
 		}
 	case "languagessecondary":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Secondary Language"
-		languages, err := GetLanguages(db)
+		languages, err := GetLanguages(db, "")
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for _, language := range languages {
 			var count int64
@@ -436,7 +406,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := db.QueryRow(languagequery, language).Scan(&count)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			if count > 0 && language != "" {
 				data = append(data, StatData{
@@ -447,19 +417,17 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			}
 		}
 	case "languagesoriginal":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Original Language"
-		languages, err := GetLanguages(db)
+		languages, err := GetLanguages(db, "")
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for _, language := range languages {
 			var count int64
@@ -467,7 +435,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := db.QueryRow(languagequery, language).Scan(&count)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			if count > 0 && language != "" {
 				data = append(data, StatData{
@@ -478,7 +446,6 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			}
 		}
 	case "deweys":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		var d0 int64
 		var d1 int64
@@ -507,9 +474,8 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 		err := db.QueryRow(query).Scan(&total, &d0, &d1, &d2, &d3, &d4, &d5, &d6, &d7, &d8, &d9, &df)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Category"
 		data = append(data, StatData{
 			Label:    "Information Sciences",
 			Value:    fmt.Sprintf("%d", d0),
@@ -566,19 +532,17 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			ToolText: fmt.Sprintf("%.2f%%", float64(df)/float64(total)*100),
 		})
 	case "formats":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Format"
-		formats, err := GetFormats(db)
+		formats, err := GetFormats(db, "")
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for _, format := range formats {
 			var count int64
@@ -586,7 +550,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := db.QueryRow(formatquery, format).Scan(&count)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			if count > 0 && format != "" {
 				data = append(data, StatData{
@@ -597,20 +561,18 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			}
 		}
 	case "contributorstop":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Top Contributors"
 		query := `SELECT COUNT(authorid) AS BooksWritten, FirstName, MiddleNames, LastName, Role FROM persons JOIN written_by ON written_by.authorid = persons.personid JOIN books ON books.BookID = written_by.BookID WHERE isowned = 1 and lastname != "" ` + inlibrary + ` GROUP BY AUTHORID ORDER BY BooksWritten DESC LIMIT 30`
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for rows.Next() {
 			var count int64
@@ -618,7 +580,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err = rows.Scan(&count, &fn, &mn, &ln, &role)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			name := ln + " (" + role + ")"
 			if mn != "" {
@@ -634,13 +596,11 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			})
 		}
 	case "contributorsperrole":
-		chart.Chart.FormatNumberScale = "0"
-		chart.Chart.Caption = "Contributors By Role"
 		query := `SELECT COUNT(role) AS InRole, Role FROM persons JOIN written_by ON written_by.authorid = persons.personid JOIN books ON books.BookID = written_by.BookID WHERE isowned = 1 and role != "" ` + inlibrary + ` GROUP BY Role ORDER BY InRole DESC`
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for rows.Next() {
 			var count int64
@@ -648,7 +608,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err = rows.Scan(&count, &role)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			data = append(data, StatData{
 				Label: role,
@@ -656,19 +616,18 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			})
 		}
 	case "datesoriginal":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		query = `Select OriginallyPublished from books where OriginallyPublished != '0000-00-00' AND isowned=1 ` + inlibrary
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		var dates []int
 		for rows.Next() {
@@ -676,7 +635,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := rows.Scan(&date)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			dates = append(dates, date.Year())
 		}
@@ -717,21 +676,19 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 				ToolText: fmt.Sprintf("%.2f%%", float64(decadeCounts[decade])/float64(total)*100),
 			})
 		}
-		chart.Chart.Caption = "Books By Original Publication Date"
 	case "datespublication":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		query = `Select EditionPublished from books where EditionPublished != '0000-00-00' AND isowned=1 ` + inlibrary
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		var dates []int
 		for rows.Next() {
@@ -739,7 +696,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := rows.Scan(&date)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			dates = append(dates, date.Year())
 		}
@@ -781,9 +738,6 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			})
 		}
 	case "lexile":
-		chart.Chart.Caption = "Books By Lexile Grade Level"
-		chart.Chart.Subcaption = "Taken from Common Core State Standards for English, Language Arts, Appendix A (Additional Information), NGA and CCSSO, 2012"
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		var l0 int64
 		var l1 int64
@@ -816,9 +770,8 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 		err := db.QueryRow(query).Scan(&total, &l0, &l1, &l2, &l3, &l4, &l5, &l6, &l7, &l8, &l9, &l10, &l11, &l12)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Grade Level"
 		data = append(data, StatData{
 			Label:    "Pre Grade 1\n(Less than 190L)",
 			Value:    fmt.Sprintf("%d", l0),
@@ -885,19 +838,17 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			ToolText: fmt.Sprintf("%.2f%%", float64(l12)/float64(total)*100),
 		})
 	case "tag":
-		chart.Chart.FormatNumberScale = "0"
 		var total int64
 		totalquery := `SELECT count(*) FROM books WHERE isowned=1 ` + inlibrary
 		err := db.QueryRow(totalquery).Scan(&total)
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
-		chart.Chart.Caption = "Books By Tag"
-		tags, err := GetTags(db)
+		tags, err := GetTags(db, "")
 		if err != nil {
 			logger.Printf("Error: %+v", err)
-			return chart, err
+			return ChartInfo{}, err
 		}
 		for _, tag := range tags {
 			var count int64
@@ -905,7 +856,7 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			err := db.QueryRow(tagsQuery, tag).Scan(&count)
 			if err != nil {
 				logger.Printf("Error: %+v", err)
-				return chart, err
+				return ChartInfo{}, err
 			}
 			if count > 0 && tag != "" {
 				data = append(data, StatData{
@@ -916,8 +867,10 @@ func GetStats(db *sql.DB, t, libraryids string) (StatChart, error) {
 			}
 		}
 	}
-	chart.Data = data
-	return chart, nil
+	return ChartInfo{
+		Total: totalCount,
+		Data: data,
+	}, nil
 }
 
 //GetDimensions gets dimensions
@@ -1065,10 +1018,14 @@ func GetPublisher(db *sql.DB, id string) (Publisher, error) {
 }
 
 //GetPublishers gets all publishers
-func GetPublishers(db *sql.DB) ([]string, error) {
+func GetPublishers(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getPublishersQuery)
+	query := getPublishersQuery
+	if queryString != "" {
+		query += " WHERE Publisher LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying publishers: %v", err)
 		return nil, err
@@ -1084,10 +1041,14 @@ func GetPublishers(db *sql.DB) ([]string, error) {
 }
 
 //GetCities gets all cities
-func GetCities(db *sql.DB) ([]string, error) {
+func GetCities(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getCitiesQuery)
+	query := getCitiesQuery
+	if queryString != "" {
+		query += " WHERE City LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying cities: %v", err)
 		return nil, err
@@ -1103,10 +1064,14 @@ func GetCities(db *sql.DB) ([]string, error) {
 }
 
 //GetStates gets all states
-func GetStates(db *sql.DB) ([]string, error) {
+func GetStates(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getStatesQuery)
+	query := getStatesQuery
+	if queryString != "" {
+		query += " WHERE State LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying states: %v", err)
 		return nil, err
@@ -1122,10 +1087,14 @@ func GetStates(db *sql.DB) ([]string, error) {
 }
 
 //GetCountries gets all countries
-func GetCountries(db *sql.DB) ([]string, error) {
+func GetCountries(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getCountriesQuery)
+	query := getCountriesQuery
+	if queryString != "" {
+		query += " WHERE Country LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying countries: %v", err)
 		return nil, err
@@ -1141,10 +1110,14 @@ func GetCountries(db *sql.DB) ([]string, error) {
 }
 
 //GetSeries gets all series
-func GetSeries(db *sql.DB) ([]string, error) {
+func GetSeries(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getSeriesQuery)
+	query := getSeriesQuery
+	if queryString != "" {
+		query += " WHERE Series LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying series: %v", err)
 		return nil, err
@@ -1160,10 +1133,14 @@ func GetSeries(db *sql.DB) ([]string, error) {
 }
 
 //GetFormats gets all formats
-func GetFormats(db *sql.DB) ([]string, error) {
+func GetFormats(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getFormatsQuery)
+	query := getFormatsQuery
+	if queryString != "" {
+		query += " WHERE Format LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying formats: %v", err)
 		return nil, err
@@ -1179,10 +1156,14 @@ func GetFormats(db *sql.DB) ([]string, error) {
 }
 
 //GetLanguages gets all languages
-func GetLanguages(db *sql.DB) ([]string, error) {
+func GetLanguages(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getLanguagesQuery)
+	query := getLanguagesQuery
+	if queryString != "" {
+		query += " WHERE Language LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying languages: %v", err)
 		return nil, err
@@ -1198,10 +1179,14 @@ func GetLanguages(db *sql.DB) ([]string, error) {
 }
 
 //GetRoles gets all roles
-func GetRoles(db *sql.DB) ([]string, error) {
+func GetRoles(db *sql.DB, queryString string) ([]string, error) {
 	var s string
 	var r = make([]string, 0)
-	rows, err := db.Query(getRolesQuery)
+	query := getRolesQuery
+	if queryString != "" {
+		query += " WHERE Role LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying roles: %v", err)
 		return nil, err
@@ -1217,9 +1202,13 @@ func GetRoles(db *sql.DB) ([]string, error) {
 }
 
 //GetDeweys gets all deweys
-func GetDeweys(db *sql.DB) ([]Dewey, error) {
+func GetDeweys(db *sql.DB, queryString string) ([]Dewey, error) {
 	var r = make([]Dewey, 0)
-	rows, err := db.Query(getDeweysQuery)
+	query := getDeweysQuery
+	if queryString != "" {
+		query += " WHERE Number LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying deweys: %v", err)
 		return nil, err
@@ -1237,10 +1226,27 @@ func GetDeweys(db *sql.DB) ([]Dewey, error) {
 	return r, nil
 }
 
+//GetGenre gets the genre of a dewey
+func GetGenre(db *sql.DB, dewey string) (string, error) {
+	var genre sql.NullString
+	err := db.QueryRow(genreQuery, dewey).Scan(&genre)
+	if err == sql.ErrNoRows {
+		return "", nil
+	} else if err != nil {
+		logger.Printf("Error scanning genre: %v", err)
+		return "", err
+	}
+	return genre.String, nil
+}
+
 //GetTags gets all tags
-func GetTags(db *sql.DB) ([]string, error) {
+func GetTags(db *sql.DB, queryString string) ([]string, error) {
 	var r []string
-	rows, err := db.Query(getTagsQuery)
+	query := getTagsQuery
+	if queryString != "" {
+		query += " WHERE Tag LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying tags: %v", err)
 		return nil, err
@@ -1257,9 +1263,13 @@ func GetTags(db *sql.DB) ([]string, error) {
 }
 
 //GetAwards gets all tags
-func GetAwards(db *sql.DB) ([]string, error) {
+func GetAwards(db *sql.DB, queryString string) ([]string, error) {
 	var r []string
-	rows, err := db.Query(getAwardsQuery)
+	query := getAwardsQuery
+	if queryString != "" {
+		query += " WHERE Award LIKE '%%" + queryString + "%%'"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		logger.Printf("Error querying awards: %v", err)
 		return nil, err
